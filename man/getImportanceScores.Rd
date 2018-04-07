@@ -5,7 +5,8 @@
 \title{Compute and return importance scores (Relief-F scores)}
 \usage{
 getImportanceScores(train.set = NULL, holdout.set = NULL,
-  label = "phenos", imp.estimator = "ReliefFbestK", verbose = FALSE)
+  label = "phenos", importance.name = "relieff",
+  importance.algorithm = "ReliefFbestK", verbose = FALSE)
 }
 \arguments{
 \item{train.set}{A training data frame with last column as class}
@@ -14,7 +15,7 @@ getImportanceScores(train.set = NULL, holdout.set = NULL,
 
 \item{label}{A character vector of the class variable column name}
 
-\item{imp.estimator}{A character vector CORElearn attribute importance estimator}
+\item{importance.name}{A list importance operation parameters}
 
 \item{verbose}{A flag indicating whether verbose output be sent to stdout}
 }
@@ -24,4 +25,10 @@ A list with two data frames representing the importance scores
 }
 \description{
 Compute and return importance scores (Relief-F scores)
+}
+\seealso{
+Other classification: \code{\link{epistasisRank}},
+  \code{\link{originalThresholdout}},
+  \code{\link{privateEC}}, \code{\link{privateRF}},
+  \code{\link{standardRF}}, \code{\link{xgboostRF}}
 }

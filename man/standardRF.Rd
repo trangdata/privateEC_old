@@ -45,8 +45,13 @@ Standard random forests algorithm serves as a baseline model
 num.samples <- 100
 num.variables <- 100
 pct.signals <- 0.1
-sim.data <- createSimulation(num.vars=num.variables, n=num.samples,
-                             sim.type="mainEffect", verbose=FALSE)
+sim.data <- createSimulation(num.variables = num.variables,
+                             num.samples = num.samples,
+                             sim.type = "mainEffect",
+                             pct.train = 1 / 3,
+                             pct.holdout = 1 / 3,
+                             pct.validation = 1 / 3,
+                             verbose = FALSE)
 rra.results <- standardRF(train.ds=sim.data$train,
                           holdout.ds=sim.data$holdout,
                           validation.ds=sim.data$validation,
@@ -56,6 +61,9 @@ rra.results <- standardRF(train.ds=sim.data$train,
                           signal.names=sim.data$signal.names)
 }
 \seealso{
-Other classification: \code{\link{originalThresholdout}},
-  \code{\link{privateECinbix}}, \code{\link{privateEC}}
+Other classification: \code{\link{epistasisRank}},
+  \code{\link{getImportanceScores}},
+  \code{\link{originalThresholdout}},
+  \code{\link{privateEC}}, \code{\link{privateRF}},
+  \code{\link{xgboostRF}}
 }

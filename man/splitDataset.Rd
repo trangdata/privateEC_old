@@ -33,11 +33,11 @@ default is a 50-50 split into training and holdout, no testing set
 code class/label/phenotypes as 1 and -1.
 }
 \examples{
-data("fullfMRI2")
-data.sets <- splitDataset(fullfMRI2)
+data("rsfMRIcorrMDD")
+data.sets <- splitDataset(rsfMRIcorrMDD)
 }
 \seealso{
-Other simulation: \code{\link{createDiffCoexpMatrixNoME}},
-  \code{\link{createSimulation}},
-  \code{\link{simulateData}}
+Other simulation: \code{\link{createInteractions}},
+  \code{\link{createMainEffects}},
+  \code{\link{createSimulation}}
 }

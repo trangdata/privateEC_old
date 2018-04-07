@@ -5,12 +5,13 @@
 \title{Private Evaporative Cooling feature selection and classification}
 \usage{
 privateEC(train.ds = NULL, holdout.ds = NULL, validation.ds = NULL,
-  label = "phenos", is.simulated = TRUE, bias = 0.4, update.freq = 50,
-  corelearn.estimator = "ReliefFbestK", rf.ntree = 500, rf.mtry = NULL,
-  start.temp = 0.1, final.temp = 10^(-5), tau.param = 100,
-  threshold = 4/sqrt(nrow(holdout.ds)),
-  tolerance = 1/sqrt(nrow(holdout.ds)), signal.names = NULL,
-  save.file = NULL, verbose = FALSE)
+  label = "phenos", is.simulated = TRUE, bias = 0.4, update.freq = 5,
+  importance.name = "relieff", importance.algorithm = "ReliefFbestK",
+  learner.name = "randomforest", learner.cv = 10, rf.mtry = NULL,
+  xgb.num.rounds = c(1), xgb.max.depth = c(4), xgb.shrinkage = c(1),
+  start.temp = 0.1, final.temp = 1e-05, tau.param = 100,
+  threshold = 4/sqrt(nrow(train.ds)), tolerance = 1/sqrt(nrow(train.ds)),
+  signal.names = NULL, save.file = NULL, verbose = FALSE)
 }
 \arguments{
 \item{train.ds}{A data frame with training data and class labels}
@@ -21,17 +22,25 @@ privateEC(train.ds = NULL, holdout.ds = NULL, validation.ds = NULL,
 
 \item{label}{A character vector of the class variable column name}
 
-\item{is.simulated}{Is the data simulated (or real?)}
-
 \item{bias}{A numeric for effect size in simulated signal variables}
 
 \item{update.freq}{An integer the number of steps before update}
 
-\item{corelearn.estimator}{CORElearn Relief-F estimator}
+\item{importance.name}{A character vector containg the importance algorithm name}
 
-\item{rf.ntree}{An integer the number of trees in the random forest}
+\item{importance.algorithm}{A character vestor containing a specific importance algorithm subtype}
 
-\item{rf.mtry}{An integer the number of variables sampled at each random forest node split}
+\item{learner.name}{A character vector containg the learner algorithm name}
+
+\item{learner.cv}{An integer for the number of cross validation folds}
+
+\item{rf.mtry}{An integer for the number of variables used for node splits}
+
+\item{xgb.num.rounds}{= A vector of integers for xgboost algorithm iterations}
+
+\item{xgb.max.depth}{A vector of integers for the xboost maximum tree depth}
+
+\item{xgb.shrinkage}{= A vector of numerics for xgboost shrinkage values 0-1}
 
 \item{start.temp}{A numeric EC starting temperature}
 
@@ -72,26 +81,44 @@ material (Dwork, et al., 2015).
 num.samples <- 100
 num.variables <- 100
 pct.signals <- 0.1
-sim.data <- createSimulation(n=num.samples,
-                             num.vars=num.variables,
-                             pct.signals=pct.signals,
-                             sim.type="mainEffect",
-                             verbose=FALSE)
-pec.results <- privateEC(train.ds=sim.data$train,
-                         holdout.ds=sim.data$holdout,
-                         validation.ds=sim.data$validation,
-                         label=sim.data$class.label,
-                         is.simulated=TRUE,
-                         signal.names=sim.data$signal.names,
-                         verbose=FALSE)
+sim.data <- createSimulation(num.samples = num.samples,
+                             num.variables = num.variables,
+                             pct.signals = pct.signals,
+                             pct.train = 1 / 3,
+                             pct.holdout = 1 / 3,
+                             pct.validation = 1 /3,
+                             sim.type = "mainEffect",
+                             verbose = FALSE)
+pec.results <- privateEC(train.ds = sim.data$train,
+                         holdout.ds = sim.data$holdout,
+                         validation.ds = sim.data$validation,
+                         label = sim.data$class.label,
+                         importance.name = "relieff",
+                         learner.name = "randomforest",
+                         is.simulated = TRUE,
+                         signal.names = sim.data$signal.names,
+                         verbose = FALSE)
+pec.results <- privateEC(train.ds = sim.data$train,
+                         holdout.ds = sim.data$holdout,
+                         validation.ds = sim.data$validation,
+                         label = sim.data$class.label,
+                         is.simulated = TRUE,
+                         signal.names = sim.data$signal.names,
+                         verbose = FALSE)
 }
 \references{
 Trang Le, W. K. Simmons, M. Misaki, B.C. White, J. Savitz, J. Bodurka,
 and B. A. McKinney. “Differential privacy-based Evaporative Cooling feature selection
 and classification with Relief-F and Random Forests,”
-Bioinformatics. Accepted. https://doi.org/10.1093/bioinformatics/btx298. 2017
+Bioinformatics. Accepted. \url{https://doi.org/10.1093/bioinformatics/btx298}. 2017
+
+For more information see:
+\href{http://insilico.utulsa.edu/index.php/privateec/}{Insilico Lab privateEC Page}
 }
 \seealso{
-Other classification: \code{\link{originalThresholdout}},
-  \code{\link{privateECinbix}}, \code{\link{standardRF}}
+Other classification: \code{\link{epistasisRank}},
+  \code{\link{getImportanceScores}},
+  \code{\link{originalThresholdout}},
+  \code{\link{privateRF}}, \code{\link{standardRF}},
+  \code{\link{xgboostRF}}
 }

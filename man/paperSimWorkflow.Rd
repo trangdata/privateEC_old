@@ -37,22 +37,23 @@ Default parameter values match those from the Bioinformatics paper.
   num.variables <- 100
   pct.signals <- 0.1
   upd.frq <- 0.1 * num.variables
-  one.step.result <- paperSimWorkflow(n.samples=num.samples,
-                                      n.variables=num.variables,
-                                      pct.signals=pct.signals,
-                                      update.freq=upd.frq,
-                                      verbose=FALSE)
+  one.step.result <- paperSimWorkflow(n.samples = num.samples,
+                                      n.variables = num.variables,
+                                      pct.signals = pct.signals,
+                                      update.freq = upd.frq,
+                                      verbose = FALSE)
 }
 \seealso{
 The workflow consists of the sequence:
 \code{\link{createSimulation}}
-\code{\link{privateEC}} (optionally \code{\link{privateECinbix}})
+\code{\link{privateEC}}
 \code{\link{originalThresholdout}}
 \code{\link{privateRF}}
 \code{\link{standardRF}} and
-\code{\link{compileResults}}. A comparison analysis with real data (fMRI)
+\code{\link{compileAndSaveAllResults}}. A comparison analysis with real data (fMRI)
 is in \code{\link{paperRealWorkflow}}.
 
-Other workflows: \code{\link{compileResults}},
-  \code{\link{paperRealWorkflow}}
+Other workflows: \code{\link{compileAndSaveAllResults}},
+  \code{\link{paperRealWorkflow}},
+  \code{\link{plotRunResults}}
 }

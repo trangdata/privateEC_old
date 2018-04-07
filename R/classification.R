@@ -10,31 +10,55 @@
 #' @param train.set A training data frame with last column as class
 #' @param holdout.set A holdout data frame with last column as class
 #' @param label A character vector of the class variable column name
-#' @param imp.estimator A character vector CORElearn attribute importance estimator
+#' @param importance.name A list importance operation parameters
 #' @param verbose A flag indicating whether verbose output be sent to stdout
 #' @return A list with two data frames representing the importance scores
 #' (Relief-F scores) for the train and holdout data sets.
+#' @family classification
+#' @export
 getImportanceScores <- function(train.set=NULL,
                                 holdout.set=NULL,
                                 label="phenos",
-                                imp.estimator="ReliefFbestK",
+                                importance.name = "relieff",
+                                importance.algorithm = "ReliefFbestK",
                                 verbose=FALSE) {
-  if(is.null(train.set)) {
+  if (is.null(train.set)) {
     stop("getImportanceScores: No training data set provided")
   }
-  if(is.null(holdout.set)) {
+  if (is.null(holdout.set)) {
     stop("getImportanceScores: No holdout data set provided")
   }
-  if(verbose) cat("\ttrain\n")
-  train.relief <- CORElearn::attrEval(label,
-                                      data=train.set,
-                                      estimator=imp.estimator)
-  if(verbose) cat("\tholdout\n")
-  holdout.relief <- CORElearn::attrEval(label,
-                                        data=holdout.set,
-                                        estimator=imp.estimator)
-
-  list(data.frame(train.relief), data.frame(holdout.relief))
+  if (dim(train.set)[2] != dim(holdout.set)[2]) {
+    print(dim(train.set))
+    print(dim(holdout.set))
+    stop("Training and holdout data sets have different number of columns")
+  }
+  if (verbose) cat("\tComputing importance scores\n")
+  good.results <- FALSE
+  if (importance.name == "relieff") {
+    if (verbose) cat("\tRelief-F train\n")
+    train.importance <- CORElearn::attrEval(label, data = train.set,
+                                            estimator = importance.algorithm)
+    if (verbose) cat("\tRelief-F holdout\n")
+    holdout.importance <- CORElearn::attrEval(label, data = holdout.set,
+                                              estimator = importance.algorithm)
+    good.results <- TRUE
+  }
+  # if (learner.name == "epistasisrank") {
+  #   if (verbose) cat("\tEpistasisRank train\n")
+  #   train.imp <- epistasisRank(importance.options$train.regain, importance.options$priorknowledge)
+  #   train.importance <- as.numeric(train.imp$rank)
+  #   names(train.importance) <- importance.options$feature.names
+  #   if (verbose) cat("\tEpistasisRank holdout\n")
+  #   holdout.imp <- epistasisRank(importance.options$holdout.regain, importance.options$priorknowledge)
+  #   holdout.importance <- as.numeric(holdout.imp)
+  #   names(holdout.importance) <- importance.options$feature.names
+  #   good.results <- TRUE
+  # }
+  if (!good.results) {
+    stop("Variable importance ranker name [ ", importance.name, " ] not found or failed")
+  }
+  list(train.scores = train.importance, holdout.scores = holdout.importance)
 }
 
 #' Private Evaporative Cooling feature selection and classification
@@ -43,12 +67,16 @@ getImportanceScores <- function(train.set=NULL,
 #' @param holdout.ds A data frame with holdout data and class labels
 #' @param validation.ds A data frame with validation data and class labels
 #' @param label A character vector of the class variable column name
-#' @param is.simulated Is the data simulated (or real?)
 #' @param bias A numeric for effect size in simulated signal variables
 #' @param update.freq An integer the number of steps before update
-#' @param corelearn.estimator CORElearn Relief-F estimator
-#' @param rf.ntree An integer the number of trees in the random forest
-#' @param rf.mtry An integer the number of variables sampled at each random forest node split
+#' @param importance.name A character vector containg the importance algorithm name
+#' @param importance.algorithm A character vestor containing a specific importance algorithm subtype
+#' @param learner.name A character vector containg the learner algorithm name
+#' @param learner.cv An integer for the number of cross validation folds
+#' @param rf.mtry An integer for the number of variables used for node splits
+#' @param xgb.max.depth A vector of integers for the xboost maximum tree depth
+#' @param xgb.num.rounds = A vector of integers for xgboost algorithm iterations
+#' @param xgb.shrinkage = A vector of numerics for xgboost shrinkage values 0-1
 #' @param start.temp A numeric EC starting temperature
 #' @param final.temp A numeric EC final temperature
 #' @param tau.param A numeric tau to control temperature reduction schedule
@@ -70,209 +98,355 @@ getImportanceScores <- function(train.set=NULL,
 #' num.samples <- 100
 #' num.variables <- 100
 #' pct.signals <- 0.1
-#' sim.data <- createSimulation(n=num.samples,
-#'                              num.vars=num.variables,
-#'                              pct.signals=pct.signals,
-#'                              sim.type="mainEffect",
-#'                              verbose=FALSE)
-#' pec.results <- privateEC(train.ds=sim.data$train,
-#'                          holdout.ds=sim.data$holdout,
-#'                          validation.ds=sim.data$validation,
-#'                          label=sim.data$class.label,
-#'                          is.simulated=TRUE,
-#'                          signal.names=sim.data$signal.names,
-#'                          verbose=FALSE)
-#' @note Within thresholdout, we choose a threshold of 4 / sqrt(n) and
+#' sim.data <- createSimulation(num.samples = num.samples,
+#'                              num.variables = num.variables,
+#'                              pct.signals = pct.signals,
+#'                              pct.train = 1 / 3,
+#'                              pct.holdout = 1 / 3,
+#'                              pct.validation = 1 /3,
+#'                              sim.type = "mainEffect",
+#'                              verbose = FALSE)
+#' pec.results <- privateEC(train.ds = sim.data$train,
+#'                          holdout.ds = sim.data$holdout,
+#'                          validation.ds = sim.data$validation,
+#'                          label = sim.data$class.label,
+#'                          importance.name = "relieff",
+#'                          learner.name = "randomforest",
+#'                          is.simulated = TRUE,
+#'                          signal.names = sim.data$signal.names,
+#'                          verbose = FALSE)
+#' pec.results <- privateEC(train.ds = sim.data$train,
+#'                          holdout.ds = sim.data$holdout,
+#'                          validation.ds = sim.data$validation,
+#'                          label = sim.data$class.label,
+#`                          learner.name = "xgboost",
+#                           xgb.max.depth = 5,
+#'                          is.simulated = TRUE,
+#'                          signal.names = sim.data$signal.names,
+#'                          verbose = FALSE)
+#' @note
+#' Within thresholdout, we choose a threshold of 4 / sqrt(n) and
 #' tolerance of 1 / sqrt(n) as suggested in the thresholdout’s supplementary
 #' material (Dwork, et al., 2015).
 #' @references
 #' Trang Le, W. K. Simmons, M. Misaki, B.C. White, J. Savitz, J. Bodurka,
 #' and B. A. McKinney. “Differential privacy-based Evaporative Cooling feature selection
 #' and classification with Relief-F and Random Forests,”
-#' Bioinformatics. Accepted. https://doi.org/10.1093/bioinformatics/btx298. 2017
+#' Bioinformatics. Accepted. \url{https://doi.org/10.1093/bioinformatics/btx298}. 2017
+#'
+#' For more information see:
+#' \href{http://insilico.utulsa.edu/index.php/privateec/}{Insilico Lab privateEC Page}
 #' @family classification
 #' @export
-privateEC <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
-                      label="phenos",
-                      is.simulated=TRUE,
-                      bias=0.4,
-                      update.freq=50,
-                      corelearn.estimator="ReliefFbestK",
-                      rf.ntree=500,
-                      rf.mtry=NULL,
-                      start.temp=0.1,
-                      final.temp=10 ^ (-5),
-                      tau.param=100,
-                      threshold=4 / sqrt(nrow(holdout.ds)),
-                      tolerance=1 / sqrt(nrow(holdout.ds)),
-                      signal.names=NULL,
-                      save.file=NULL,
-                      verbose=FALSE) {
-  if(is.null(train.ds) | is.null(holdout.ds)) {
+privateEC <- function(train.ds = NULL,
+                      holdout.ds = NULL,
+                      validation.ds = NULL,
+                      label = "phenos",
+                      is.simulated = TRUE,
+                      bias = 0.4,
+                      update.freq = 5,
+                      importance.name = "relieff",
+                      importance.algorithm = "ReliefFbestK",
+                      learner.name = "randomforest",
+                      learner.cv = 10,
+                      rf.mtry = NULL,
+                      xgb.num.rounds = c(1),
+                      xgb.max.depth = c(4),
+                      xgb.shrinkage = c(1.0),
+                      start.temp = 0.1,
+                      final.temp = 0.00001,
+                      tau.param = 100,
+                      threshold = 4 / sqrt(nrow(train.ds)),
+                      tolerance = 1 / sqrt(nrow(train.ds)),
+                      signal.names = NULL,
+                      save.file = NULL,
+                      verbose = FALSE) {
+  if (is.null(train.ds) | is.null(holdout.ds)) {
     stop("At least train and holdout data sets must be provided")
   }
-  if(is.simulated & is.null(signal.names)) {
-    warning("No signal names provided")
+  if (ncol(train.ds) != ncol(holdout.ds)) {
+    stop("Training and holdout data sets must have the same number of variables (columns)")
   }
-  n <- nrow(train.ds)
-  d <- ncol(train.ds) - 1
-  param.mtry <- rf.mtry
-  if(is.null(rf.mtry)) {
-    param.mtry <- floor(sqrt(d))
-  } else {
-    if((param.mtry < 1) | (param.mtry > d)) {
-      stop(paste("mtry parameter", param.mtry, "out of range 1 < mtry < d"))
+  if (sum(colnames(train.ds) != colnames(holdout.ds)) > 0) {
+    stop("Training and holdout data sets must have the same variable (column) names")
+  }
+  if (!is.null(validation.ds)) {
+    if (ncol(train.ds) != ncol(validation.ds)) {
+      stop("Training and validation data sets must have the same number of variables (columns)")
+    }
+    if (sum(colnames(train.ds) != colnames(validation.ds)) > 0) {
+      stop("Training and validation data sets must have the same variable (column) names")
     }
   }
+  if (!is.null(rf.mtry) && !is.factor(rf.mtry)) {
+    rf.mtry.valid <- max(floor(ncol(train.ds) / 3), 1)
+  } else {
+    rf.mtry.valid <- floor(sqrt(ncol(train.ds)))
+  }
+  if (is.simulated & is.null(signal.names)) {
+    warning("For correct detection of signals, 'signal.names' parameter is required")
+  }
+  num.data.rows <- nrow(train.ds)
+  num.data.cols <- ncol(train.ds) - 1
+  orig.var.names <- colnames(train.ds)
   ptm <- proc.time()
-  if(verbose) cat("running Relief-F importance for training and holdout sets\n")
-  important.scores <- getImportanceScores(train.set=train.ds,
-                                          holdout.set=holdout.ds,
-                                          label=label,
-                                          imp.estimator=corelearn.estimator,
-                                          verbose=verbose)
-  if(verbose) cat("private EC importance:", corelearn.estimator,
-                  "elapsed time:", (proc.time() - ptm)[3], "\n")
-
-  q1.scores <- important.scores[[1]]
-  q2.scores <- important.scores[[2]]
-  att.names <- rownames(q1.scores)
+  cat("\nRunning the privateEC algorithm...\n")
+  if (verbose) cat("running [", importance.name, "] importance for training and holdout sets\n")
+  if (importance.name == "relieff") {
+    # pass-through the importance function options list
+    initial.scores <- getImportanceScores(train.set = train.ds,
+                                          holdout.set = holdout.ds,
+                                          label = label,
+                                          importance.name = importance.name,
+                                          verbose = verbose)
+  } else {
+    stop("Importance method [", importance.name, "] is not recognized")
+  }
+  if (length(initial.scores) != 2) {
+    stop("Could not get two vectors of importance scores for train and holdout data sets")
+  }
+  if (verbose) cat("private EC importance:", importance.name,
+                   "elapsed time:", (proc.time() - ptm)[3], "\n")
+  q1.scores <- initial.scores[[1]]
+  q2.scores <- initial.scores[[2]]
+  if (length(q1.scores) != length(q2.scores)) {
+    stop("Initial imoprtance scores for train and holdout data sets are not the same size")
+  }
+  orig.var.names <- names(q1.scores)
   diff.scores <- abs(q1.scores - q2.scores)
   delta.q <- max(diff.scores)
-  q1.scores.plot <- q1.scores
-
+  all.train.acc <- vector(mode = "numeric")
+  all.holdout.acc <- vector(mode = "numeric")
+  all.validation.acc <- vector(mode = "numeric")
+  vars.remain.per.update <- vector(mode = "numeric")
+  correct.detect.ec <- vector(mode = "numeric")
+  current.var.names <- orig.var.names
+  prev.var.names <- current.var.names
+  if (verbose) cat("privateEC optimization loop begin\n")
   T0 <- start.temp
   Tmin <- final.temp
   tau <- tau.param
-
-  i <- 1
-  myT <- T0
-
-  fholds <- 0.5
-  fvalidations <- 0.5
-  ftrains <- 0.5
-  correct.detect.ec <- vector(mode="numeric")
-  oldAccuracy <- 0.5
-  cur.vars.remain <- length(att.names)
-
-  vars.remain <- c(0, cur.vars.remain)
-  kept.atts <- att.names
-  var.names <- list()
-
-  if(verbose) cat("private EC optimization loop\n")
+  current.temp <- T0
+  current.iteration <- 1
   num.updates <- 0
-  while ((myT > Tmin) && (utils::tail(vars.remain, 1) > 2) &&
-         (utils::tail(vars.remain, 2)[1] != utils::tail(vars.remain, 2)[2])) {
-
+  keep.looping <- ifelse(length(current.var.names) > 1, TRUE, FALSE)
+  algo.hist <- data.frame()
+  algo.hist <- rbind(algo.hist,
+    data.frame(iter = current.iteration,
+               update = num.updates,
+               numvars =  length(current.var.names),
+               temp = current.temp,
+               tmpmin = Tmin)
+  )
+  while (keep.looping & (current.temp > Tmin)) {
     diff <- diff.scores * (diff.scores > 10^(-3)) + 10^(-3) * (diff.scores < 10^(-3))
-    PAs <- exp(-q1.scores / (2 * diff * myT))
-    PAs <- PAs[kept.atts, ]
+    PAs <- exp(-q1.scores / (2 * diff * current.temp))
+    PAs <- PAs[current.var.names]
     sumPAs <- sum(PAs)
-    scaled.PAs <- PAs / sum(PAs)
+    scaled.PAs <- PAs / sumPAs
     cum.scaled.PAs <- cumsum(scaled.PAs)
     num.remv <- 1 # only remove 1 attribute
-    prob.rands <- sort(stats::runif(num.remv, min=0, max=1))
-    remv.atts <- kept.atts[prob.rands < cum.scaled.PAs][1]
-    if (num.remv >= length(kept.atts)){
-      kept.atts <- NULL
-      break
+    prob.rands <- sort(stats::runif(num.remv, min = 0, max = 1))
+    var.names.to.remove <- current.var.names[prob.rands < cum.scaled.PAs][1]
+    if (length(var.names.to.remove) != num.remv) {
+      cat("\tremove by probability distribution: cannot remove any variables")
+      keep.looping <- FALSE
+      next
     } else {
-      kept.atts <- setdiff(kept.atts, remv.atts)
+      current.var.names <- setdiff(current.var.names, var.names.to.remove)
+      if (length(current.var.names) < 2) {
+        if (verbose) cat("\tsetdiff remove: last variable removed\n")
+        keep.looping <- FALSE
+        next
+      }
+      if (verbose) cat("\t[", length(current.var.names), "] remaining variables\n")
     }
-
-    # Compute train and holdout accuracy for new S_A attributes:
-    att.names <- kept.atts
-    if((i %% update.freq) == 1) {
+    if (length(prev.var.names) == length(current.var.names)) {
+      cat("\tCONVERGENCE to a set of variables that are unchanging\n")
+      keep.looping <- FALSE
+      break
+    }
+    # run on the current set of variables - "update"
+    if ((current.iteration == 1) | (current.iteration %% update.freq) == 0) {
       num.updates <- num.updates + 1
-      if(verbose) cat("step", i, "update", num.updates, "myT > Tmin",
-                      myT, Tmin, "?\n")
-      if(verbose) cat("\trecomputing scores with evaporated attributes removed\n")
-      new.X_train <- train.ds[, c(kept.atts, label), drop=F]
-      new.X_holdout <- holdout.ds[, c(kept.atts, label), drop=F]
-      new.X_validation <- validation.ds[, c(kept.atts, label), drop=F]
-      new.scores <- getImportanceScores(new.X_train, new.X_holdout, label=label)
+      cat("pEC Iteration [", current.iteration, "] Temp Updates [", num.updates, "]",
+          "Is", length(current.var.names), "current.temp > [", current.temp, "] >",
+          "Tmin? [", Tmin, "]?\n")
+      algo.hist <- rbind(algo.hist,
+                         data.frame(iter = current.iteration,
+                                    update = num.updates,
+                                    numvars =  length(current.var.names),
+                                    temp = current.temp,
+                                    tmpmin = Tmin)
+      )
+      # re-compute imnportance
+      if (verbose) cat("\tRecomputing scores with evaporated attributes removed\n")
+      new.train.ds <- train.ds[, c(current.var.names, label)]
+      new.holdout.ds <- holdout.ds[, c(current.var.names, label)]
+      new.validation.ds <- validation.ds[, c(current.var.names, label)]
+      if (importance.name == "relieff") {
+        new.scores <- getImportanceScores(train.set = new.train.ds,
+                                          holdout.set = new.holdout.ds,
+                                          label = label,
+                                          importance.name = importance.name,
+                                          verbose = verbose)
+      } else {
+        stop("Importance method [", learner.name, "] is not recognized")
+      }
       q1.scores <- new.scores[[1]]
       q2.scores <- new.scores[[2]]
+      if (length(q1.scores) != length(q2.scores)) {
+        cat("WARNING: q1 and q2 scores of different lengths [", length(q1.scores), "] vs. [",
+            length(q2.scores), "], exiting EC loop\n")
+        keep.looping <- FALSE
+        next
+      }
       diff.scores <- abs(q1.scores - q2.scores)
       delta.q <- max(diff.scores)
-      if(verbose) cat("\trunning randomForest\n")
-      if(param.mtry >= ncol(new.X_train) - 1) {
-        kept.atts <- NULL
-        break
-        # param.mtry <- floor(sqrt(ncol(new.X_train) - 1))
-        #attempted.mtry <- param.mtry
-        # param.mtry <-  floor((ncol(new.X_train) - 1) / 2)
-        # cat("random forest mtry setting", attempted.mtry,
-        #     ">= ", ncol(new.X_train) - 1,
-        #     ", so setting to half the number of variables",
-        #     param.mtry, "\n")
+      # run the learner
+      method.valid <- FALSE
+      if (learner.name == "randomforest") {
+        if (verbose) cat("\tRunning randomForest\n")
+        rf.train.ds <- train.ds[, c(current.var.names, label)]
+        rf.train.pheno <- factor(rf.train.ds[, label])
+        if (any(is.na(rf.train.pheno))) {
+          cat("Phenos:\n")
+          print(rf.train.pheno)
+          stop("NAs detected in training phenotype")
+        }
+        control <- caret::trainControl(method = "cv",
+                                       number = learner.cv,
+                                       search = "grid")
+        if (is.null(rf.mtry)) {
+          if (ncol(rf.train.ds) < 10) {
+            tunegrid <- NULL
+          } else {
+            tunegrid = expand.grid(
+              mtry = c(max(floor(ncol(rf.train.ds)/3), 1), floor(sqrt(length(rf.train.pheno))))
+            )
+          }
+        } else {
+          tunegrid = expand.grid(mtry = rf.mtry)
+        }
+        #print(tunegrid)
+        rf.gridsearch <- caret::train(as.formula(paste(label, "~ .")),
+                                      data = rf.train.ds,
+                                      method = "rf",
+                                      metric = "Accuracy",
+                                      tuneGrid = tunegrid,
+                                      trControl = control)
+        #if (verbose & interactive()) plot(rf.gridsearch)
+        current.train.acc <- rf.gridsearch$results$Accuracy[which.max(rf.gridsearch$results$Accuracy)]
+        if (verbose) cat("\tpredict holdout\n")
+        holdout.pred <- predict(rf.gridsearch, newdata = new.holdout.ds)
+        if (verbose) print(holdout.pred)
+        if (verbose) print(new.holdout.ds[, label])
+        current.holdout.acc <- mean(holdout.pred == new.holdout.ds[, label])
+
+        if (!is.null(new.validation.ds)) {
+          if (verbose) cat("\tpredict validation\n")
+          if (verbose) print(new.validation.ds[, label])
+          validation.pred <- predict(rf.gridsearch, newdata = new.validation.ds)
+          current.validation.acc <- mean(validation.pred == new.validation.ds[, label])
+        } else {
+          current.validation.acc <- 0
+        }
+        method.valid <- TRUE
       }
-      model.formula <- stats::as.formula(paste(label, "~.", sep=""))
-      result.rf <- randomForest::randomForest(formula=model.formula,
-                                              data=new.X_train,
-                                              ntree=rf.ntree,
-                                              mtry=param.mtry)
-      ftrain <- 1 - mean(result.rf$confusion[,"class.error"])
-      if(verbose) cat("\tpredict\n")
-      holdout.pred <- stats::predict(result.rf, newdata=new.X_holdout)
-      fholdout <- mean(holdout.pred == holdout.ds[, label])
-      if(is.simulated) {
-        validation.pred <- stats::predict(result.rf, newdata=new.X_validation)
-        fvalidation <- mean(validation.pred == validation.ds[, label])
+      if (learner.name == "xgboost") {
+        if (verbose) cat("\trunning xgboost\n")
+        xgb.results <- xgboostRF(train.ds = new.train.ds,
+                                 holdout.ds = new.holdout.ds,
+                                 validation.ds = new.validation.ds,
+                                 cv.folds = learner.cv,
+                                 num.rounds = xgb.num.rounds,
+                                 max.depth =  xgb.max.depth,
+                                 shrinkage = xgb.shrinkage,
+                                 label = label,
+                                 verbose = verbose)
+        current.train.acc <- xgb.results$algo.acc$train.acc
+        current.holdout.acc <- xgb.results$algo.acc$holdout.acc
+        current.validation.acc <- xgb.results$algo.acc$validation.acc
+        method.valid <- TRUE
+      }
+      if (!method.valid) {
+        stop("Learner method [ ", learner.name, " ] is not recognized")
+      }
+      if (verbose) {
+        cat("\tthreshold:          ", threshold, "\n")
+        cat("\ttolerance:          ", tolerance, "\n")
+        cat("\tlearner function:   ", learner.name, "\n")
+        cat("\timportance function:", learner.name, "\n")
+        cat("\tftrain:             ", current.train.acc, "\n")
+        cat("\tfholdout:           ", current.holdout.acc, "\n")
+      }
+      # make adjustments
+      lil.bit <- stats::rnorm(1, 0, tolerance)
+      if (abs(current.train.acc - current.holdout.acc) < (threshold + lil.bit)) {
+        if (verbose) {
+          cat("\tClassification error difference is less than threshold + random tolerance\n")
+          cat("\tAdjusting holdout error to training error\n")
+        }
+        current.holdout.acc <- current.train.acc
       } else {
-        fvalidation <- 0
+        if (verbose) cat("\tadjust holdout by adding normal random value 0 to tolerance\n")
+        current.holdout.acc <- current.holdout.acc + lil.bit
       }
-      if(abs(ftrain - fholdout) < (threshold + stats::rnorm(1, 0, tolerance))) {
-        fholdout <- ftrain
+      # save results
+      all.train.acc <- c(all.train.acc, current.train.acc)
+      all.holdout.acc <- c(all.holdout.acc, current.holdout.acc)
+      all.validation.acc <- c(all.validation.acc, current.validation.acc)
+      vars.remain.per.update <- c(vars.remain.per.update, length(current.var.names))
+      # adjust the temperature
+      if (verbose) cat("\tadjusting temperature\n")
+      current.temp <- current.temp * exp(-1 / tau) # dropping T
+      if (verbose) cat("\t", current.iteration - 1, ': ', current.temp, '\n')
+      # check for simulated variables
+      if (verbose) cat("\tcollecting results\n")
+      if (is.simulated) {
+        correct.detect.ec <- c(correct.detect.ec, sum(current.var.names %in% signal.names))
+      }
+      if (length(current.var.names) < 2) {
+        cat("\tvariables list exhausted: no more variables to remove\n")
+        keep.looping <- FALSE
       } else {
-        if(verbose) cat("\tadjust holdout with stats::rnorm\n")
-        fholdout <- fholdout + stats::rnorm(1, 0, tolerance)
-      }
 
-      ftrains <- c(ftrains, ftrain)
-      fholds <- c(fholds, fholdout)
-      fvalidations <- c(fvalidations, fvalidation)
-
-      if(verbose) cat("\tadjusting temperature\n")
-      myT <- myT * exp(-1 / tau) # dropping T
-      if(verbose) cat("\t", i - 1, ': ', myT, '\n')
-
-      if(verbose) cat("\tcollecting results\n")
-      cur.vars.remain <- length(att.names)
-      vars.remain <- c(vars.remain, cur.vars.remain)
-      var.names[[num.updates]] <- kept.atts
-      if(is.simulated) {
-        correct.detect.ec <- c(correct.detect.ec,
-                               sum(var.names[[num.updates]] %in% signal.names))
       }
     }
-    i <- i + 1
+    current.iteration <- current.iteration + 1
+    prev.var.names <- current.var.names
   }
-  if(verbose) cat("private EC optimization loop elapsed time:",
-                  (proc.time() - ptm)[3], "\n")
+  elapsed.time <- (proc.time() - ptm)[3]
+  if (verbose) cat("private EC optimization loop performed", num.updates,
+                   "updates in", elapsed.time, " seconds\n")
 
-  vars.remain <- vars.remain[-1] # remove the first value 0
-  fplots <- data.frame(vars.remain,
-                       train.acc=ftrains,
-                       holdout.acc=fholds,
-                       validation.acc=fvalidations,
-                       alg=1)
-  fplots <- fplots[-1, ] # remove the first row
-  melted.fs <- reshape2::melt(fplots, id=c("vars.remain", "alg"))
-  if(!is.null(save.file)) {
-    if(verbose) {
-      cat("saving results to ", save.file, "\n")
+  # prepare results for returning to caller
+  plot.data <- data.frame(vars.remain = vars.remain.per.update,
+                          train.acc = all.train.acc,
+                          holdout.acc = all.holdout.acc,
+                          validation.acc = all.validation.acc,
+                          alg = 1)
+  if (verbose) print(plot.data)
+  plot.data.narrow <- reshape2::melt(plot.data, id = c("vars.remain", "alg"))
+
+  # save the results to an Rdata file if requested
+  if (!is.null(save.file)) {
+    if (verbose) {
+      cat("saving results to [", save.file, "] \n")
     }
-    save(fplots, melted.fs, correct.detect.ec, n, d, signal.names,
-         threshold, tolerance, bias, file=save.file)
+    save(plot.data, plot.data.narrow, correct.detect.ec, num.data.cols, num.data.rows,
+         signal.names, threshold, tolerance, bias, elapsed.time, file = save.file)
   }
 
-  if(verbose) cat("privateEC elapsed time:", (proc.time() - ptm)[3], "\n")
+  elapsed.time <- (proc.time() - ptm)[3]
+  if (verbose) cat("privateEC elapsed time:", elapsed.time, "\n")
 
-  list(algo.acc=fplots,
-       ggplot.data=melted.fs,
-       correct=correct.detect.ec,
-       elasped=(proc.time() - ptm)[3])
+  list(algo.acc = plot.data,
+       ggplot.data = plot.data.narrow,
+       correct = correct.detect.ec,
+       elasped = elapsed.time,
+       atts.remain = current.var.names,
+       updates = algo.hist)
 }
 
 #' Original Thresholdout algorithm
@@ -305,51 +479,55 @@ privateEC <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
 #' num.samples <- 100
 #' num.variables <- 100
 #' pct.signals <- 0.1
-#' temp.pec.file <- tempfile(pattern="pEc_temp", tmpdir=tempdir())
-#'
-#' sim.data <- createSimulation(num.vars=num.variables,
-#'                              n=num.samples,
-#'                              sim.type="mainEffect",
-#'                              verbose=FALSE)
-#' pec.results <- privateEC(train.ds=sim.data$train,
-#'                          holdout.ds=sim.data$holdout,
-#'                          validation.ds=sim.data$validation,
-#'                          label=sim.data$class.label,
-#'                          is.simulated=TRUE,
-#'                          signal.names=sim.data$signal.names,
-#'                          save.file=temp.pec.file,
-#'                          verbose=FALSE)
-#' por.results <- originalThresholdout(train.ds=sim.data$train,
-#'                                    holdout.ds=sim.data$holdout,
-#'                                    validation.ds=sim.data$validation,
-#'                                    label=sim.data$class.label,
-#'                                    is.simulated=TRUE,
-#'                                    signal.names=sim.data$signal.names,
-#'                                    pec.file=temp.pec.file,
-#'                                    verbose=FALSE)
+#' temp.pec.file <- tempfile(pattern = "pEc_temp", tmpdir = tempdir())
+#' sim.data <- createSimulation(num.variables = num.variables,
+#'                              num.samples = num.samples,
+#'                              sim.type = "mainEffect",
+#'                              pct.train = 1 / 3,
+#'                              pct.holdout = 1 / 3,
+#'                              pct.validation = 1 / 3,
+#'                              verbose = FALSE)
+#' pec.results <- privateEC(train.ds = sim.data$train,
+#'                          holdout.ds = sim.data$holdout,
+#'                          validation.ds = sim.data$validation,
+#'                          label = sim.data$class.label,
+#'                          is.simulated = TRUE,
+#'                          signal.names = sim.data$signal.names,
+#'                          save.file = temp.pec.file,
+#'                          verbose = FALSE)
+#' por.results <- originalThresholdout(train.ds = sim.data$train,
+#'                                     holdout.ds = sim.data$holdout,
+#'                                     validation.ds = sim.data$validation,
+#'                                     label = sim.data$class.label,
+#'                                     is.simulated = TRUE,
+#'                                     signal.names = sim.data$signal.names,
+#'                                     pec.file = temp.pec.file,
+#'                                     verbose = FALSE)
 #' file.remove(temp.pec.file)
 #' @family classification
 #' @export
-originalThresholdout <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
-                                label="phenos",
-                                is.simulated=TRUE,
-                                update.freq=50,
-                                pec.file=NULL,
-                                threshold=4 / sqrt(nrow(holdout.ds)),
-                                tolerance=1 / sqrt(nrow(holdout.ds)),
-                                signal.names=NULL,
-                                save.file=NULL,
-                                verbose=FALSE) {
-  if(is.null(train.ds) | is.null(holdout.ds)) {
+originalThresholdout <- function(train.ds=NULL,
+                                 holdout.ds=NULL,
+                                 validation.ds=NULL,
+                                 label="phenos",
+                                 is.simulated=TRUE,
+                                 update.freq=50,
+                                 pec.file=NULL,
+                                 threshold=4 / sqrt(nrow(holdout.ds)),
+                                 tolerance=1 / sqrt(nrow(holdout.ds)),
+                                 signal.names=NULL,
+                                 save.file=NULL,
+                                 verbose=FALSE) {
+  if (is.null(train.ds) | is.null(holdout.ds)) {
     stop("At least train and holdout data sets must be provided")
   }
-  if(is.simulated & is.null(signal.names)) {
+  if (is.simulated & is.null(signal.names)) {
     stop("No signal names provided")
   }
-  if(is.null(pec.file)) {
+  if (is.null(pec.file)) {
     stop("No previous privateEC results file in pec.file argument")
   }
-  if(!file.exists(pec.file)) {
+  if (!file.exists(pec.file)) {
     stop("privateEC results file expected in pec.file argument:", pec.file)
   }
 
@@ -359,17 +537,17 @@ originalThresholdout <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=N
   d <- ncol(train.ds) - 1
 
   # compare with original privacy::
-  if(verbose) cat("loading resuls from privacy EC", pec.file, "\n")
+  if (verbose) cat("loading resuls from privacy EC", pec.file, "\n")
   load(pec.file)
 
   predictors.train <- as.matrix(train.ds[, 1:d])
   predictors.holdout <- as.matrix(holdout.ds[, 1:d])
-  if(is.simulated) {
+  if (is.simulated) {
     predictors.validation <- as.matrix(validation.ds[, 1:d])
   }
   train.pheno <- train.ds[, label]
   holdout.pheno <- holdout.ds[, label]
-  if(is.simulated) {
+  if (is.simulated) {
     validation.pheno <- validation.ds[, label]
     validation.pheno <- as.numeric(levels(validation.pheno))[validation.pheno]
   }
@@ -397,54 +575,54 @@ originalThresholdout <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=N
   vars.remain <- alg.steps
   numks <- length(vars.remain)
   noisy_vals <- matrix(-1, numks, 3)
-  correct.detect.ori <- vector(mode="numeric")
+  correct.detect.ori <- vector(mode = "numeric")
   var.names <- list()
 
-  for (i in 1:numks){
+  for (i in 1:numks) {
     k <- vars.remain[i]
     topk <- utils::tail(sortanswers, k)
     weights <- matrix(0, d, 1)
     weights[topk] <- sign(trainanswers[topk])
     ftrain <- mean((sign(predictors.train %*% weights)) == train.pheno)
     fholdout <- mean((sign(predictors.holdout %*% weights)) == holdout.pheno)
-    if(abs(ftrain - fholdout) < threshold + stats::rnorm(1, 0, tolerance)){
+    if (abs(ftrain - fholdout) < threshold + stats::rnorm(1, 0, tolerance)) {
       fholdout <- ftrain
     } else {
       fholdout <- fholdout + stats::rnorm(1, 0, tolerance)
     }
-    if(is.simulated) {
+    if (is.simulated) {
       fvalidation <- mean((sign(predictors.validation %*% weights)) == validation.pheno)
     } else {
       fvalidation <- 0
     }
-    if(k == 0) {
+    if (k == 0) {
       ftrain <- 0.5
       fholdout <- 0.5
       fvalidation <- 0.5
     }
     noisy_vals[i,] <- c(ftrain, fholdout, fvalidation)
     var.names[[i]] <- colnames(train.ds)[topk]
-    if(is.simulated) {
+    if (is.simulated) {
       correct.detect.ori <- c(correct.detect.ori,
                               sum(var.names[[i]] %in% signal.names))
     }
   }
 
   colnames(noisy_vals) <- c("train.acc", "holdout.acc", "validation.acc")
-  pplots <- data.frame(vars.remain, noisy_vals, alg=2)
-  melted.ps <- reshape2::melt(pplots, id=c("vars.remain", "alg"))
+  pplots <- data.frame(vars.remain, noisy_vals, alg = 2)
+  melted.ps <- reshape2::melt(pplots, id = c("vars.remain", "alg"))
 
-  if(!is.null(save.file)) {
-    if(verbose) cat("saving to", save.file, "\n")
-    save(pplots, melted.ps, correct.detect.ori, file=save.file)
+  if (!is.null(save.file)) {
+    if (verbose) cat("saving to", save.file, "\n")
+    save(pplots, melted.ps, correct.detect.ori, file = save.file)
   }
 
-  if(verbose) cat("originalThresholout elapsed time:", (proc.time() - ptm)[3], "\n")
+  if (verbose) cat("originalThresholout elapsed time:", (proc.time() - ptm)[3], "\n")
 
-  list(algo.acc=pplots,
-       ggplot.data=melted.ps,
-       correct=correct.detect.ori,
-       elasped=(proc.time() - ptm)[3])
+  list(algo.acc = pplots,
+       ggplot.data = melted.ps,
+       correct = correct.detect.ori,
+       elasped = (proc.time() - ptm)[3])
 }
 
 #' Private random forests algorithm
@@ -480,31 +658,36 @@ originalThresholdout <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=N
 #' num.samples <- 100
 #' num.variables <- 100
 #' pct.signals <- 0.1
-#' temp.pec.file <- tempfile(pattern="pEc_temp", tmpdir=tempdir())
-#'
-#' sim.data <- createSimulation(num.vars=num.variables,
-#'                              n=num.samples,
-#'                              sim.type="mainEffect",
-#'                              verbose=FALSE)
-#' pec.results <- privateEC(train.ds=sim.data$train,
-#'                          holdout.ds=sim.data$holdout,
-#'                          validation.ds=sim.data$validation,
-#'                          label=sim.data$class.label,
-#'                          is.simulated=TRUE,
-#'                          signal.names=sim.data$signal.names,
-#'                          save.file=temp.pec.file,
-#'                          verbose=FALSE)
-#' prf.results <- privateRF(train.ds=sim.data$train,
-#'                          holdout.ds=sim.data$holdout,
-#'                          validation.ds=sim.data$validation,
-#'                          label=sim.data$class.label,
-#'                          is.simulated=TRUE,
-#'                          signal.names=sim.data$signal.names,
-#'                          pec.file=temp.pec.file,
-#'                          verbose=FALSE)
+#' temp.pec.file <- tempfile(pattern = "pEc_temp", tmpdir = tempdir())
+#' sim.data <- createSimulation(num.variables = num.variables,
+#'                              num.samples = num.samples,
+#'                              sim.type = "mainEffect",
+#'                              pct.train = 1 / 3,
+#'                              pct.holdout = 1 / 3,
+#'                              pct.validation = 1 / 3,
+#'                              verbose = FALSE)
+#' pec.results <- privateEC(train.ds = sim.data$train,
+#'                          holdout.ds = sim.data$holdout,
+#'                          validation.ds = sim.data$validation,
+#'                          label = sim.data$class.label,
+#'                          is.simulated = TRUE,
+#'                          signal.names = sim.data$signal.names,
+#'                          save.file = temp.pec.file,
+#'                          verbose = FALSE)
+#' prf.results <- privateRF(train.ds = sim.data$train,
+#'                          holdout.ds = sim.data$holdout,
+#'                          validation.ds = sim.data$validation,
+#'                          label = sim.data$class.label,
+#'                          is.simulated = TRUE,
+#'                          signal.names = sim.data$signal.names,
+#'                          pec.file = temp.pec.file,
+#'                          verbose = FALSE)
 # file.remove(temp.pec.file)
+#' @family classification
 #' @export
-privateRF <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
+privateRF <- function(train.ds=NULL,
+                      holdout.ds=NULL,
+                      validation.ds=NULL,
                       label="phenos",
                       is.simulated=TRUE,
                       rf.importance.measure="MeanDecreaseGini",
@@ -512,55 +695,57 @@ privateRF <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
                       rf.mtry=NULL,
                       pec.file=NULL,
                       update.freq=50,
-                      threshold=4 / sqrt(nrow(holdout.ds)),
-                      tolerance=1 / sqrt(nrow(holdout.ds)),
+                      threshold=4 / sqrt(nrow(train.ds)),
+                      tolerance=1 / sqrt(nrow(train.ds)),
                       signal.names=NULL,
                       save.file=NULL,
                       verbose=FALSE) {
-  if(is.null(train.ds) | is.null(holdout.ds)) {
+  if (is.null(train.ds) | is.null(holdout.ds)) {
     stop("At least train and holdout data sets must be provided")
   }
   n <- nrow(train.ds)
   d <- ncol(train.ds) - 1
   param.mtry <- rf.mtry
-  if(is.null(rf.mtry)) {
+  if (is.null(rf.mtry)) {
     param.mtry <- floor(sqrt(d))
   }
-  if(param.mtry < 1 | param.mtry > d) {
+  if (param.mtry < 1 | param.mtry > d) {
     stop(paste("mtry parameter", param.mtry, "out of range 1 < mtry < d"))
   }
-  if(is.simulated & is.null(signal.names)) {
+  if (is.simulated & is.null(signal.names)) {
     stop("privateRF: No signal names provided")
   }
-  if(is.null(pec.file)) {
+  if (is.null(pec.file)) {
     stop("privateRF: No previous privateEC results file in pec.file argument")
   }
-  if(!file.exists(pec.file)) {
+  if (!file.exists(pec.file)) {
     stop("privateRF: Previous privateEC results file in pec.file argument:", pec.file)
   }
 
   ptm <- proc.time()
 
-  if(verbose) cat("loading resuls from privacy EC", pec.file, "\n")
+  if (verbose) cat("loading resuls from privacy EC", pec.file, "\n")
   load(pec.file)
 
   predictors.train <- as.matrix(train.ds[, 1:d])
   predictors.holdout <- as.matrix(holdout.ds[, 1:d])
-  if(is.simulated) {
-    predictors.validation <- as.matrix(validation.ds[, 1:d])
-  }
-
-  train.rf <- randomForest::randomForest(x=predictors.train,
-                                         y=train.ds[, label],
-                                         ntree=rf.ntree,
-                                         mtry=param.mtry,
-                                         importance=T)
+  # if (is.simulated) {
+  #   if (!is.null(validation.ds)) {
+  #     # NOTE: bcw, predictors.validation not used?
+  #     predictors.validation <- as.matrix(validation.ds[, 1:d])
+  #   }
+  # }
+  train.rf <- randomForest::randomForest(x = predictors.train,
+                                         y = train.ds[, label],
+                                         ntree = rf.ntree,
+                                         mtry = param.mtry,
+                                         importance = T)
   train.imp <- train.rf$importance[, rf.importance.measure]
-  holdout.rf <- randomForest::randomForest(x=predictors.holdout,
-                                           y=holdout.ds[, label],
-                                           ntree=rf.ntree,
-                                           mtry=param.mtry,
-                                           importance=T)
+  holdout.rf <- randomForest::randomForest(x = predictors.holdout,
+                                           y = holdout.ds[, label],
+                                           ntree = rf.ntree,
+                                           mtry = param.mtry,
+                                           importance = T)
   holdout.imp <- holdout.rf$importance[, rf.importance.measure]
   trainanswers <- train.imp
   holdoutanswers <- holdout.imp
@@ -582,11 +767,11 @@ privateRF <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
   vars.remain <- alg.steps
   numks <- length(vars.remain)
   noisy_vals <- matrix(-1, numks, 3)
-  correct.detect.rf <- vector(mode="numeric")
+  correct.detect.rf <- vector(mode = "numeric")
   var.names <- list()
-  if(verbose) cat("loop for", numks, ": ")
+  if (verbose) cat("loop for", numks, ": ")
   for (i in 1:numks) {
-    if(verbose) cat(i, " ")
+    if (verbose) cat(i, " ")
     k <- vars.remain[i]
     if (k == 0) {
       ftrain <- 0.5
@@ -596,18 +781,20 @@ privateRF <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
       topk <- utils::tail(sortanswers, k)
       var.names[[i]] <- colnames(train.ds)[topk]
       # rf classifier:
-      data.k <- train.ds[, topk, drop=F]
-      if(param.mtry >= ncol(data.k)) {
+      data.k <- train.ds[, topk, drop = F]
+      if (param.mtry >= ncol(data.k)) {
         break
       }
-      rf.model.k <- randomForest::randomForest(x=data.k,
-                                               y=train.ds[, label],
-                                               ntree=rf.ntree,
-                                               mtry=param.mtry)
-      # ytrain.pred <- stats::predict(rf.model.k, newdata=train.ds)
-      yholdout.pred <- stats::predict(rf.model.k, newdata=holdout.ds)
-      if(is.simulated) {
-        yvalidation.pred <- stats::predict(rf.model.k, newdata=validation.ds)
+      rf.model.k <- randomForest::randomForest(x = data.k,
+                                               y = train.ds[, label],
+                                               ntree = rf.ntree,
+                                               mtry = param.mtry)
+      # ytrain.pred <- stats::predict(rf.model.k, newdata = train.ds)
+      yholdout.pred <- stats::predict(rf.model.k, newdata = holdout.ds)
+      if (is.simulated) {
+        if (!is.null(validation.ds)) {
+          yvalidation.pred <- stats::predict(rf.model.k, newdata = validation.ds)
+        }
       }
       ftrain <- 1 - mean(rf.model.k$confusion[, "class.error"])
       # ftrain <- mean(ytrain.pred == train.ds[, label])
@@ -620,36 +807,40 @@ privateRF <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
         fholdout <- fholdout + stats::rnorm(1, 0, tolerance)
       }
       #   fvalidation <- sum((sign(predictors.validation %*% weights)) == pheno.validation)/n
-      if(is.simulated) {
-        fvalidation <- mean(yvalidation.pred == validation.ds[, label])
+      if (is.simulated) {
+        if (!is.null(validation.ds)) {
+          fvalidation <- mean(yvalidation.pred == validation.ds[, label])
+        } else {
+          fvalidation <- 0
+        }
       } else {
         fvalidation <- 0
       }
     }
     noisy_vals[i,] <- c(ftrain, fholdout, fvalidation)
-    if(is.simulated) {
+    if (is.simulated) {
       correct.detect.rf <- c(correct.detect.rf,
                            sum(var.names[[i]] %in% signal.names))
     }
   }
-  if(verbose) cat(i, "\n")
+  if (verbose) cat(i, "\n")
 
   colnames(noisy_vals) <- c("train.acc", "holdout.acc", "validation.acc")
-  rfplots <- data.frame(vars.remain, noisy_vals, alg=3)
+  rfplots <- data.frame(vars.remain, noisy_vals, alg = 3)
 
-  melted.rfs <- reshape2::melt(rfplots, id=c("vars.remain", "alg"))
+  melted.rfs <- reshape2::melt(rfplots, id = c("vars.remain", "alg"))
 
-  if(!is.null(save.file)) {
-    if(verbose) cat("saving plot data", save.file, "\n")
-    save(rfplots, melted.rfs, correct.detect.rf, file=save.file)
+  if (!is.null(save.file)) {
+    if (verbose) cat("saving plot data", save.file, "\n")
+    save(rfplots, melted.rfs, correct.detect.rf, file = save.file)
   }
 
-  if(verbose) cat("privateRF elasped time:", (proc.time() - ptm)[3], "\n")
+  if (verbose) cat("privateRF elasped time:", (proc.time() - ptm)[3], "\n")
 
-  list(algo.acc=rfplots,
-       ggplot.data=melted.rfs,
-       correct=correct.detect.rf,
-       elasped=(proc.time() - ptm)[3])
+  list(algo.acc = rfplots,
+       ggplot.data = melted.rfs,
+       correct = correct.detect.rf,
+       elasped = (proc.time() - ptm)[3])
 }
 
 #' Standard random forests algorithm serves as a baseline model
@@ -675,8 +866,13 @@ privateRF <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
 #' num.samples <- 100
 #' num.variables <- 100
 #' pct.signals <- 0.1
-#' sim.data <- createSimulation(num.vars=num.variables, n=num.samples,
-#'                              sim.type="mainEffect", verbose=FALSE)
+#' sim.data <- createSimulation(num.variables = num.variables,
+#'                              num.samples = num.samples,
+#'                              sim.type = "mainEffect",
+#'                              pct.train = 1 / 3,
+#'                              pct.holdout = 1 / 3,
+#'                              pct.validation = 1 / 3,
+#'                              verbose = FALSE)
 #' rra.results <- standardRF(train.ds=sim.data$train,
 #'                           holdout.ds=sim.data$holdout,
 #'                           validation.ds=sim.data$validation,
@@ -686,7 +882,9 @@ privateRF <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
 #'                           signal.names=sim.data$signal.names)
 #' @family classification
 #' @export
-standardRF <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
+standardRF <- function(train.ds=NULL,
+                       holdout.ds=NULL,
+                       validation.ds=NULL,
                        label="phenos",
                        rf.ntree=500,
                        rf.mtry=NULL,
@@ -694,185 +892,258 @@ standardRF <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
                        signal.names=NULL,
                        save.file=NULL,
                        verbose=FALSE) {
-  if(is.null(train.ds) | is.null(holdout.ds)) {
+  if (is.null(train.ds) | is.null(holdout.ds)) {
     stop("At least train and holdout data sets must be provided")
   }
-  n <- nrow(train.ds)
+  # NOTE: bcw, 'n' not used?
+  # n <- nrow(train.ds)
   d <- ncol(train.ds) - 1
   param.mtry <- rf.mtry
-  if(is.null(rf.mtry)) {
+  if (is.null(rf.mtry)) {
     param.mtry <- floor(sqrt(d))
   }
-  if(param.mtry < 1 | param.mtry > d) {
+  if (param.mtry < 1 | param.mtry > d) {
     stop(paste("mtry parameter", param.mtry, "out of range 1 < mtry < d"))
   }
-  if(is.simulated & is.null(signal.names)) {
+  if (is.simulated & is.null(signal.names)) {
     stop("regularRF: No signal names provided")
   }
   ptm <- proc.time()
-  bag.simul <- randomForest::randomForest(stats::as.formula(paste(label, "~ .", sep="")),
-                                          data=rbind(train.ds, holdout.ds),
-                                          ntree=rf.ntree,
-                                          mtry=param.mtry,
-                                          importance=T)
+  bag.simul <- randomForest::randomForest(stats::as.formula(paste(label, "~ .", sep = "")),
+                                          data = rbind(train.ds, holdout.ds),
+                                          ntree = rf.ntree,
+                                          mtry = param.mtry,
+                                          importance = TRUE)
   # rf.holdo.accu <- 1- bag.simul$prediction.error
   rf.holdout.accu <- 1 - mean(bag.simul$confusion[, "class.error"])
-  if(is.simulated) {
-    rf.pred <- stats::predict(bag.simul, newdata=validation.ds)
+  if (is.simulated) {
+    rf.pred <- stats::predict(bag.simul, newdata = validation.ds)
     rf.validation.accu <- mean(rf.pred == validation.ds[, label])
   } else {
     rf.validation.accu  <- 0
   }
-  if(verbose) cat("accuracies", rf.holdout.accu, rf.validation.accu, "\n")
-  if(!is.null(save.file)) {
-    save(rf.validation.accu, rf.holdout.accu, file=save.file)
+  if (verbose) cat("accuracies", rf.holdout.accu, rf.validation.accu, "\n")
+  if (!is.null(save.file)) {
+    save(rf.validation.accu, rf.holdout.accu, file = save.file)
   }
 
-  rRaplots <- data.frame(vars.remain=ncol(train.ds),
-                         train.acc=1,
-                         holdout.acc=rf.holdout.accu,
-                         validation.acc=rf.validation.accu,
-                         alg=4)
-  melted.rra <- reshape2::melt(rRaplots, id=c("vars.remain", "alg"))
+  rRaplots <- data.frame(vars.remain = ncol(train.ds),
+                         train.acc = 1,
+                         holdout.acc = rf.holdout.accu,
+                         validation.acc = rf.validation.accu,
+                         alg = 4)
+  melted.rra <- reshape2::melt(rRaplots, id = c("vars.remain", "alg"))
 
-  if(verbose) cat("regularRF elapsed time:", (proc.time() - ptm)[3], "\n")
+  elapsed.time <- (proc.time() - ptm)[3]
+  if (verbose) cat("regularRF elapsed time:", elapsed.time, "\n")
 
-  list(algo.acc=rRaplots,
-       ggplot.data=melted.rra,
-       correct=ifelse(is.simulated, ncol(train.ds), 0),
-       elasped=(proc.time() - ptm)[3])
+  list(algo.acc = rRaplots,
+       ggplot.data = melted.rra,
+       correct = ifelse(is.simulated, ncol(train.ds), 0),
+       elasped = elapsed.time)
 }
 
-#' Call C++ inbix Evaporative Cooling Privacy
+#' xgboost random forests algorithm
 #'
-#' Assumes the inbix executable is in the PATH.
+#' Scalable and Flexible Gradient Boosting
+#' XGBoost is short for “Extreme Gradient Boosting”, where the term “Gradient Boosting”
+#' is proposed in the paper Greedy Function Approximation: A Gradient Boosting Machine,
+#' by Friedman. XGBoost is based on this original model. This is a function using gradient
+#' boosted trees for privacyEC.
 #'
 #' @param train.ds A data frame with training data and class labels
 #' @param holdout.ds A data frame with holdout data and class labels
 #' @param validation.ds A data frame with validation data and class labels
 #' @param label A character vector of the class variable column name
-#' @param is.simulated Is the data simulated (or real?)
-#' @param bias A numeric for effect size in simulated signal variables
-#' @param update.freq A integer for the number of steps before update
-#' @param start.temp A numeric for EC starting temperature
-#' @param final.temp A numeric for EC final temperature
-#' @param tau.param A numeric for tau to control reduction schedule
-#' @param rf.ntree An integer the number of trees in the random forest
-#' @param rf.mtry An integer the number of variables sampled at each random forest node split
+#' @param cv.folds An integer for the number of cross validation folds
+#' @param num.threads An integer for OpenMP number of cores
+#' @param num.rounds An integer number of xgboost boosting iterations
+#' @param max.depth An integer aximum tree depth
+#' @param shrinkage A numeric gradient learning rate 0-1
 #' @param save.file A character vector for results filename or NULL to skip
 #' @param verbose A flag indicating whether verbose output be sent to stdout
-#' @note inbix must be instaled in the path
 #' @return A list containing:
 #' \describe{
 #'   \item{algo.acc}{data frame of results, a row for each update}
 #'   \item{ggplot.data}{melted results data frame for plotting}
-#'   \item{correct}{number of variables detected correctly in each data set}
+#'   \item{trn.model}{xgboost model}
 #'   \item{elapsed}{total elapsed time}
 #' }
 #' @examples
 #' num.samples <- 100
 #' num.variables <- 100
 #' pct.signals <- 0.1
-#' sim.data <- createSimulation(num.vars=num.variables, n=num.samples,
-#'                              sim.type="mainEffect", verbose=FALSE)
-#' pec.results <- privateECinbix(train.ds=sim.data$train,
-#'                               holdout.ds=sim.data$holdout,
-#'                               validation.ds=sim.data$validation,
-#'                               verbose=FALSE)
+#' sim.data <- createSimulation(num.variables = num.variables,
+#'                              num.samples = num.samples,
+#'                              sim.type = "mainEffect",
+#'                              pct.train = 1 / 3,
+#'                              pct.holdout = 1 / 3,
+#'                              pct.validation = 1 / 3,
+#'                              verbose = FALSE)
+#' rra.results <- xgboostRF(train.ds = sim.data$train,
+#'                          holdout.ds = sim.data$holdout,
+#'                          validation.ds = sim.data$validation,
+#'                          label = sim.data$class.label,
+#'                          num.rounds = c(1),
+#'                          max.depth = c(10),
+#'                          is.simulated = TRUE,
+#'                          verbose = FALSE,
+#'                          signal.names = sim.data$signal.names)
 #' @family classification
 #' @export
-privateECinbix <- function(train.ds=NULL, holdout.ds=NULL, validation.ds=NULL,
-                           label="phenos",
-                           is.simulated=TRUE,
-                           bias=0.4,
-                           update.freq=50,
-                           start.temp=0.1,
-                           final.temp=10 ^ (-5),
-                           tau.param=100,
-                           rf.ntree=500,
-                           rf.mtry=NULL,
-                           save.file=NULL,
-                           verbose=FALSE) {
-  # check for inbix in the PATH or stop with an error
-  if(Sys.which("inbix") == "") {
-    stop("inbix is not installed or not in the PATH")
-  }
-  # check input parameters
-  if(is.null(train.ds) | is.null(holdout.ds)) {
+xgboostRF <- function(train.ds=NULL,
+                      holdout.ds=NULL,
+                      validation.ds=NULL,
+                      label="phenos",
+                      cv.folds = 10,
+                      num.threads = 2,
+                      num.rounds = c(1),
+                      max.depth = c(4),
+                      shrinkage = c(1.0),
+                      save.file=NULL,
+                      verbose=FALSE) {
+  if (is.null(train.ds) | is.null(holdout.ds)) {
     stop("At least train and holdout data sets must be provided")
   }
-  d <- ncol(train.ds) - 1
-  param.mtry <- rf.mtry
-  if(is.null(rf.mtry)) {
-    param.mtry <- floor(sqrt(d))
+  pheno.col <- which(colnames(train.ds) == label)
+  if (length(pheno.col) > 1) {
+    stop("More than one phenotype column with label [ ", label, " ]")
   }
-  if(param.mtry < 1 | param.mtry > d) {
-    stop(paste("mtry parameter", param.mtry, "out of range 1 < mtry < d"))
+  if ((pheno.col < 1) | (pheno.col > ncol(train.ds))) {
+    stop("Could not find phenotype column with label [ ", label, " ]")
   }
+  if (verbose) cat("Running xgboostRF\n")
   ptm <- proc.time()
-  unique.sim.prefix <- paste(save.file, bias, sep="_")
-  correct.detect.inbix <- vector(mode="numeric")
-  # write simple tab-separated vales (tsv) files
-  if(verbose) cat("Writing ", unique.sim.prefix, ".sim.(train|holdout|validation).tab files\n")
-  utils::write.table(train.ds, paste(unique.sim.prefix, ".sim.train.tab", sep=""), sep="\t",
-                     row.names=FALSE, col.names=TRUE, quote=FALSE)
-  utils::write.table(holdout.ds, paste(unique.sim.prefix, ".sim.holdout.tab", sep=""), sep="\t",
-                     row.names=FALSE, col.names=TRUE, quote=FALSE)
-  utils::write.table(validation.ds, paste(unique.sim.prefix, ".sim.test.tab", sep=""), sep="\t",
-                     row.names=FALSE, col.names=TRUE, quote=FALSE)
-  if(verbose) cat("Running inbix privacy EC on saved simulation data sets\n")
-  system.command <- paste("OMP_NUM_THREADS=4 inbix ",
-                          "--ec-privacy ",
-                          "--depvarname ", label, " ",
-                          "--ec-privacy-train-file ", unique.sim.prefix, ".sim.train.tab ",
-                          "--ec-privacy-holdout-file ", unique.sim.prefix, ".sim.holdout.tab ",
-                          "--ec-privacy-test-file ", unique.sim.prefix, ".sim.test.tab ",
-                          "--ec-privacy-start-temp ", start.temp, " ",
-                          "--ec-privacy-final-temp ", final.temp, " ",
-                          "--ec-privacy-tau ", tau.param, " ",
-                          "--ec-privacy-update-frequency ", update.freq, " ",
-                          "--ntree ", rf.ntree, " ",
-                          "--mtry ", param.mtry, " ",
-                          "--out ", unique.sim.prefix, ".privateec", sep="")
-  if(verbose) cat(system.command, "\n")
-  system(system.command, intern=FALSE, ignore.stdout=TRUE, ignore.stderr=TRUE)
-  # if(verbose) cat("Reading inbix privacy EC attributes used results\n")
-  # attrs.file <- paste(unique.sim.prefix, ".privateec.selected.attributes.tab", sep="")
-  # if(verbose) cat(attrs.file, "\n")
-  # attrs.table <- utils::read.table(attrs.file, sep="\t", header=FALSE, stringsAsFactors=FALSE)
-
-  if(verbose) cat("Reading inbix privacy EC algorithm run details\n")
-  iters.file <- paste(unique.sim.prefix, ".privateec.privacy.iterations.tab", sep="")
-  if(verbose) cat(iters.file, "\n")
-  iters.table <- utils::read.table(iters.file, sep="\t", header=TRUE, stringsAsFactors=FALSE)
-  if(is.simulated) {
-    correct.detect.inbix <- as.integer(iters.table$Correct)
+  var.names <- colnames(train.ds[, -pheno.col])
+  train_data <- as.matrix(train.ds[, -pheno.col])
+  colnames(train_data) <- var.names
+  train_pheno <- as.integer(train.ds[, pheno.col]) - 1
+  if (verbose) print(table(train_pheno))
+  holdout_data <- as.matrix(holdout.ds[, -pheno.col])
+  colnames(holdout_data) <- var.names
+  holdout_pheno <- as.integer(holdout.ds[, pheno.col]) - 1
+  if (verbose) print(table(holdout_pheno))
+  if (verbose) {
+    cat("-----------------------------------\n",
+        "In xgboostRF() called from private() with xgboost learner\n",
+        "nthread =",  num.threads, "\n",
+        "nrounds =", num.rounds, "\n",
+        "max.depth =", max.depth, "\n",
+        "eta =", shrinkage, "\n",
+        "------------------------------------\n")
   }
-  fxplots <- data.frame(vars.remain=as.integer(iters.table$Keep),
-                        ftrain=iters.table$TrainAcc,
-                        fholdout=iters.table$HoldoutAcc,
-                        fvalidation=iters.table$TestAcc,
-                        alg=5)
-  melted.fx <- reshape2::melt(fxplots, id=c("vars.remain", "alg"))
-  if(verbose) cat("Cleaning up inbix private EC results files\n")
-  inbix.temp.files <- c(paste(unique.sim.prefix, ".sim.train.tab", sep=""),
-                        paste(unique.sim.prefix, ".sim.holdout.tab", sep=""),
-                        paste(unique.sim.prefix, ".sim.test.tab", sep=""),
-                        paste(unique.sim.prefix, ".privateec.privacy.iterations.tab", sep=""),
-                        paste(unique.sim.prefix, ".privateec.log", sep=""))
-  #file.remove(c(inbix.conv.files, rf.files, attrs.file, iters.file))
-  file.remove(inbix.temp.files)
-  if(!is.null(save.file)) {
-    if(verbose) {
-      cat("saving results to ", save.file, "\n")
+  xgb_grid_1 = expand.grid(
+    eta = shrinkage,
+    max_depth = max.depth,
+    nrounds = num.rounds,
+    gamma = 0,
+    colsample_bytree = 1,
+    min_child_weight = 1,
+    subsample = 1
+  )
+  # pack the training control parameters
+  xgb_trcontrol_1 = caret::trainControl(
+    method = "cv",
+    number = cv.folds,
+    #summaryFunction = caret::twoClassSummary,
+    # set to TRUE for AUC to be computed
+    #classProbs = TRUE,
+    allowParallel = TRUE
+  )
+  # train the model for each parameter combination in the grid using CV to evaluate
+  if (verbose) cat("Running caret::train with cross validation and a grid of parameters to test\n")
+  train.model = caret::train(x = data.matrix(train_data),
+                             y = as.factor(train_pheno),
+                             trControl = xgb_trcontrol_1,
+                             tuneGrid = xgb_grid_1,
+                             method = "xgbTree",
+                             metric = "Accuracy",
+                             verbose = verbose)
+  pred.class <- predict(train.model, train.ds)
+  rf.train.accu <- 1 - mean(pred.class != train_pheno)
+  if (verbose) cat("training-accuracy:", rf.train.accu, "\n")
+  if (verbose) cat("Predict using the best tree\n")
+  pred.class <- predict(train.model, holdout.ds)
+  if (verbose) print(table(pred.class))
+  rf.holdo.accu <- 1 - mean(pred.class != holdout_pheno)
+  if (verbose) cat("holdout-accuracy:", rf.holdo.accu, "\n")
+  if (!is.null(validation.ds)) {
+    if (verbose) cat("Preparing dating for prediction\n")
+    validation_pheno <- as.integer(validation.ds[, pheno.col]) - 1
+    validation_data <- as.matrix(validation.ds[, -pheno.col])
+    if (verbose) print(dim(validation_data))
+    colnames(validation_data) <- var.names
+    rf.class <- predict(train.model, validation.ds)
+    if (verbose) print(table(rf.class))
+    rf.validation.accu <- 1 - mean(rf.class != validation_pheno)
+  } else {
+    rf.validation.accu <- 0
+  }
+  if (verbose) cat("validation-accuracy:", rf.validation.accu, "\n")
+  if (verbose) cat("accuracies", rf.train.accu, rf.holdo.accu, rf.validation.accu, "\n")
+  if (!is.null(save.file)) {
+    save(rf.validation.accu, rf.holdout.accu, file = save.file)
+  }
+  xgb.plots <- data.frame(vars.remain = length(var.names),
+                          train.acc = rf.train.accu,
+                          holdout.acc = rf.holdo.accu,
+                          validation.acc = rf.validation.accu,
+                          alg = 5)
+  melted.xgb <- reshape2::melt(xgb.plots, id = c("vars.remain", "alg"))
+  if (file.exists("xgboost.model")) {
+    file.remove("xgboost.model")
+  }
+  elapsed.time <- (proc.time() - ptm)[3]
+  if (verbose) cat("xgboostRF elapsed time:", elapsed.time, "\n")
+  list(algo.acc = xgb.plots,
+       ggplot.data = melted.xgb,
+       trn.model = train.model,
+       elasped = elapsed.time)
+}
+
+#' Compute and return epistasis rank scores
+#'
+#' Modified SNPrank function
+#'
+#' @param G Am adjacency matrix
+#' @param Gamma_vec A vector of prior knowledge
+#' @family classification
+#' @export
+epistasisRank <- function(G, Gamma_vec) {
+  n <- nrow(G)
+  geneNames <- colnames(G)
+  Gdiag <- diag(G)
+  Gtrace <- sum(Gdiag)
+  #colsum <- colSums(G)
+  diag(G) <- 0
+  Gtrace <- Gtrace * n
+  colsumG <- colSums(G)
+  #rowSumG <- rowSums(G)
+  rowsum_denom <- matrix(0, n, 1)
+  for (current.iteration in 1:n) {
+    localSum <- 0
+    for (j in 1:n) {
+      factor <- ifelse(G[current.iteration, j] != 0, 1, 0)
+      localSum <- localSum + (factor * colsumG[j])
     }
-    save(fxplots, melted.fx, correct.detect.inbix, bias,
-         train.ds, holdout.ds, validation.ds, file=save.file)
+    rowsum_denom[current.iteration] <- localSum
   }
-  if(verbose) cat("privacyECinbix elapsed time:", (proc.time() - ptm)[3], "\n")
-
-  list(algo.acc=fxplots,
-       ggplot.data=melted.fx,
-       correct=correct.detect.inbix,
-       elasped=(proc.time() - ptm)[3])
+  #   gamma_vec <- rep(gamma, n)
+  gamma_vec <- Gamma_vec
+  gamma_matrix <- matrix(nrow = n, ncol = n, data = rep(gamma_vec, n))
+  if (Gtrace) {
+    b <- ((1 - gamma_vec)/n) + (Gdiag/Gtrace)
+  }
+  else {
+    b <- ((1 - gamma_vec)/n)
+  }
+  D <- matrix(nrow = n, ncol = n, data = c(0))
+  diag(D) <- 1/colsumG
+  I <- diag(n)
+  temp <- I - gamma_matrix * G %*% D
+  r <- solve(temp, b)
+  final.ranks <- r/sum(r)
+  saveTable <- data.frame(gene = geneNames, rank = final.ranks)
+  sortedTable <- saveTable[order(saveTable$snprank, decreasing = TRUE), ]
+  sortedTable
 }

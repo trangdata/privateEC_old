@@ -8,9 +8,8 @@ privateRF(train.ds = NULL, holdout.ds = NULL, validation.ds = NULL,
   label = "phenos", is.simulated = TRUE,
   rf.importance.measure = "MeanDecreaseGini", rf.ntree = 500,
   rf.mtry = NULL, pec.file = NULL, update.freq = 50,
-  threshold = 4/sqrt(nrow(holdout.ds)),
-  tolerance = 1/sqrt(nrow(holdout.ds)), signal.names = NULL,
-  save.file = NULL, verbose = FALSE)
+  threshold = 4/sqrt(nrow(train.ds)), tolerance = 1/sqrt(nrow(train.ds)),
+  signal.names = NULL, save.file = NULL, verbose = FALSE)
 }
 \arguments{
 \item{train.ds}{A data frame with training data and class labels}
@@ -62,26 +61,35 @@ and classifier replaced with Random Forest.
 num.samples <- 100
 num.variables <- 100
 pct.signals <- 0.1
-temp.pec.file <- tempfile(pattern="pEc_temp", tmpdir=tempdir())
-
-sim.data <- createSimulation(num.vars=num.variables,
-                             n=num.samples,
-                             sim.type="mainEffect",
-                             verbose=FALSE)
-pec.results <- privateEC(train.ds=sim.data$train,
-                         holdout.ds=sim.data$holdout,
-                         validation.ds=sim.data$validation,
-                         label=sim.data$class.label,
-                         is.simulated=TRUE,
-                         signal.names=sim.data$signal.names,
-                         save.file=temp.pec.file,
-                         verbose=FALSE)
-prf.results <- privateRF(train.ds=sim.data$train,
-                         holdout.ds=sim.data$holdout,
-                         validation.ds=sim.data$validation,
-                         label=sim.data$class.label,
-                         is.simulated=TRUE,
-                         signal.names=sim.data$signal.names,
-                         pec.file=temp.pec.file,
-                         verbose=FALSE)
+temp.pec.file <- tempfile(pattern = "pEc_temp", tmpdir = tempdir())
+sim.data <- createSimulation(num.variables = num.variables,
+                             num.samples = num.samples,
+                             sim.type = "mainEffect",
+                             pct.train = 1 / 3,
+                             pct.holdout = 1 / 3,
+                             pct.validation = 1 / 3,
+                             verbose = FALSE)
+pec.results <- privateEC(train.ds = sim.data$train,
+                         holdout.ds = sim.data$holdout,
+                         validation.ds = sim.data$validation,
+                         label = sim.data$class.label,
+                         is.simulated = TRUE,
+                         signal.names = sim.data$signal.names,
+                         save.file = temp.pec.file,
+                         verbose = FALSE)
+prf.results <- privateRF(train.ds = sim.data$train,
+                         holdout.ds = sim.data$holdout,
+                         validation.ds = sim.data$validation,
+                         label = sim.data$class.label,
+                         is.simulated = TRUE,
+                         signal.names = sim.data$signal.names,
+                         pec.file = temp.pec.file,
+                         verbose = FALSE)
+}
+\seealso{
+Other classification: \code{\link{epistasisRank}},
+  \code{\link{getImportanceScores}},
+  \code{\link{originalThresholdout}},
+  \code{\link{privateEC}}, \code{\link{standardRF}},
+  \code{\link{xgboostRF}}
 }
